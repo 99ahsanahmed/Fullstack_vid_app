@@ -31,39 +31,40 @@ const generateAccessAndRefreshToken = async (user_id) => {
 };
 
 const registerUser = asynchandler(async (req, res) => {
-  const { fullname, username, email, password } = req.body;
+  const {
+    fullname,
+    username,
+    email,
+    password,
+    role,
+    university,
+    company,
+    city,
+  } = req.body;
 
-  // ? VALIDATION - Udemy
-  // if (
-  //   [fullname, username, email, password].some(
-  //     (fields) => fields?.trim() === "",
-  //   )
-  // ) {
-  //   throw new ApiError(409, "All fields are required");
-  // }
-
-  // const userExists = await User.findOne({
-  //   $or: [{ username }, { email }],
-  // });
-  // if (userExists) {
-  //   throw new ApiError(400, " User with username and email already exists");
-  // }
-
-  // ? VALIDATION - Chatgpt
-  if (![fullname, username, email, password].every((field) => field?.trim())) {
+  //VALIDATION - Chatgpt
+  if (
+    ![fullname, username, email, password, role].every((field) => field?.trim())) 
+  {
     throw new ApiError(409, "All fields are required");
   }
 
+  //Conditional VALIDATION
+  if (role == "tutor" && !company) {
+    throw new ApiError(409, "Company is required for tutor");
+  }
+  if (role == "student" && !university) {
+    throw new ApiError(409, "University is required for Student");
+  }
+
+  //Cleaning name and email, due to mongodb saving behaviour
   const sanitizedUsername = username.trim().toLowerCase();
   const sanitizedEmail = email.trim().toLowerCase();
 
-  console.log("Incoming Data:", req.body);
-  console.log("Sanitized Data:", { sanitizedUsername, sanitizedEmail });
-
+  //User already exists check
   const userExists = await User.findOne({
     $or: [{ username: sanitizedUsername }, { email: sanitizedEmail }],
   });
-
   if (userExists) {
     throw new ApiError(
       400,
@@ -71,33 +72,23 @@ const registerUser = asynchandler(async (req, res) => {
     );
   }
 
+  //Files
   console.warn(req.files);
   const avatarLocalPath = req.files?.avatar?.[0]?.path;
   const coverLocalPath = req.files?.coverImage?.[0]?.path;
-
   if (!avatarLocalPath) {
     throw new ApiError(404, "Avatar not found");
   }
-
-  // const avatar = await uploadOnCloudinary(avatarLocalPath);
-  // Since CoverImg isnt mandatory
-  // let coverImg = "";
-  // if (coverLocalPath) {
-  //     coverImg = await uploadOnCloudinary(coverLocalPath)
-  // }
-
-  // ! Uploading on Cloudinary
+  //Uploading Files on Cloudinary
   let avatar;
   try {
-    avatar = await uploadOnCloudinary(avatarLocalPath);
+    avatar = await uploadOnCloudinary(avatarLocalPath); //utils
     console.log("Uploaded on Cloudinary", avatar);
   } catch (error) {
     console.log("Error uploading avatar on cloudinary", error);
     throw new ApiError(500, "Failed to upload avatar");
   }
-
   let coverImage;
-
   if (coverLocalPath) {
     try {
       coverImage = await uploadOnCloudinary(coverLocalPath);
@@ -108,17 +99,27 @@ const registerUser = asynchandler(async (req, res) => {
     }
   }
 
-  //New user to database
+  //Saving new user to database
   try {
-    const user = await User.create({
+    const userData = {
       fullname,
       avatar: avatar.url,
       coverImage: coverImage?.url || "",
       email: sanitizedEmail,
       password,
+      role,
       username: sanitizedUsername,
-    });
+      city,
+    };
+    // conditionally saving company and university
+    if (role === "student") {
+      userData.university = university;
+    }
+    if (role === "tutor") {
+      userData.company = company;
+    }
 
+    const user = await User.create(userData);
     //MONGOOSE => select is use to deSelect things you dont want to extract
     const createdUser = await User.findById(user._id).select(
       "-password -refreshToken",
@@ -130,6 +131,7 @@ const registerUser = asynchandler(async (req, res) => {
     return res
       .status(201)
       .json(new ApiResponse(201, createdUser, "User created Successfully")); //status, data,
+      
   } catch (error) {
     console.log("User creation failed", error);
     if (avatar?.public_id) {
@@ -270,7 +272,7 @@ const logOutUser = asynchandler(async (req, res) => {
     },
   );
 
-  options = {
+  const options = {
     httpOnly: true,
     secure: true,
   };
@@ -327,11 +329,9 @@ const refreshAccessToken = asynchandler(async (req, res) => {
 
 const updatePassword = asynchandler(async (req, res) => {
   const { oldPassword, newPassword } = req.body;
+
   const user = await User.findById(req.user?._id);
 
-  // if (user.password !== oldPassword) {
-  //   throw new ApiError(401, "Incorrect password")
-  // }
   //? We have a built in function for it :
   const validPassword = user.isPasswordCorrect(oldPassword);
 
@@ -348,9 +348,12 @@ const updatePassword = asynchandler(async (req, res) => {
 });
 
 const getCurrentUser = asynchandler(async (req, res) => {
+  const user = await req.user;
+
+  console.log("Current User Data:", user);
   return res
     .status(200)
-    .json(new ApiResponse(200, req.user, "Current user fetched successfully"));
+    .json(new ApiResponse(user, 200, "Current user fetched successfully"));
 });
 
 const updateDetails = asynchandler(async (req, res) => {
@@ -463,10 +466,10 @@ const upateCoverImage = asynchandler(async (req, res) => {
     .json(new ApiResponse(200, updatedUser, "Avatar updated sucessfully"));
 });
 
-const getUserChannelProfile = asynchandler(async(req,res) => {
-  const {username} = req.params
+const getUserChannelProfile = asynchandler(async (req, res) => {
+  const { username } = req.params;
   if (!username?.trim()) {
-    throw new ApiError(400, "username is missing")
+    throw new ApiError(400, "username is missing");
   }
 
   const channel = User.aggregate([
@@ -522,15 +525,15 @@ const getUserChannelProfile = asynchandler(async(req,res) => {
     },
   ]);
 
-   if (!channel?.length) {
-        throw new ApiError(404, "channel does not exists")
-    }
+  if (!channel?.length) {
+    throw new ApiError(404, "channel does not exists");
+  }
 
-    return res
+  return res
     .status(200)
     .json(
-        new ApiResponse(200, channel[0], "User channel fetched successfully")
-    )
+      new ApiResponse(200, channel[0], "User channel fetched successfully"),
+    );
 });
 
 const getWatchHistory = asynchandler(async (req, res) => {
@@ -575,14 +578,23 @@ const getWatchHistory = asynchandler(async (req, res) => {
       },
     },
   ]);
-   return res.status(200).json(
-     new ApiResponse(
-       200,
-       user[0].watchHistory, //Even if only one user is found, it is still wrapped inside an array.
-       "Watch history fetched successfully",
-     ),
-   );
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      user[0].watchHistory, //Even if only one user is found, it is still wrapped inside an array.
+      "Watch history fetched successfully",
+    ),
+  );
 });
+
+const getAllTutors = asynchandler (async (req,res) => {
+  const allTutors = await User.find({ role : 'tutor' }).exec()
+  console.log(allTutors);
+  
+  return res
+  .status(200)
+  .json( new ApiResponse (allTutors,200,"All tutors fetched successfully")) 
+})
 
 export {
   registerUser,
@@ -596,4 +608,5 @@ export {
   upateCoverImage,
   getUserChannelProfile,
   getWatchHistory,
+  getAllTutors,
 };

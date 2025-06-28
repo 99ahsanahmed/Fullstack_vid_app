@@ -7,10 +7,11 @@ import {
   updatePassword,
   getCurrentUser,
   updateDetails,
-  updateAvatar,
+  upateAvatar,
   upateCoverImage,
   getUserChannelProfile,
   getWatchHistory,
+  getAllTutors
 } from "../controllers/user.js";
 import {upload}  from "../middlewares/multer.middleware.js";
 import { verifyJwtToken } from "../middlewares/auth.middleware.js";
@@ -31,16 +32,21 @@ router.route("/register").post(
 );
 
 
+router.route("/login").post(loginUser);
 //secure routes
 router.route("/logout").post(verifyJwtToken, logOutUser);
-router.route("/login").post(loginUser);
 router.route("/refresh-token").post(refreshAccessToken);
-router.route("/change-password").post(verifyJWT, updatePassword);
-router.route("/current-user").get(verifyJWT, getCurrentUser);
-router.route("/update-account").patch(verifyJWT, updateDetails);
-router.route("/avatar").patch(verifyJWT, upload.single("avatar"), updateAvatar);
-router.route("/cover-image").patch(verifyJWT, upload.single("coverImage"), upateCoverImage);
-router.route("/c/:username").get(verifyJWT, getUserChannelProfile);
-router.route("/history").get(verifyJWT, getWatchHistory);
+router.route("/change-password").post(verifyJwtToken, updatePassword);
+router.route("/current-user").get(verifyJwtToken, getCurrentUser);
+router.route("/getAllTutors").get( verifyJwtToken , getAllTutors)
+router.route("/update-account").patch(verifyJwtToken, updateDetails);
+router
+  .route("/avatar")
+  .patch(verifyJwtToken, upload.single("avatar"), upateAvatar);
+router
+  .route("/cover-image")
+  .patch(verifyJwtToken, upload.single("coverImage"), upateCoverImage);
+router.route("/c/:username").get(verifyJwtToken, getUserChannelProfile);
+router.route("/history").get(verifyJwtToken, getWatchHistory);
 
 export default router;
